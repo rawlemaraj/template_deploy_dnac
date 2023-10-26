@@ -1,45 +1,37 @@
 ---
-- name: Deploy DNA Center Template to Switch
+- name: Deploy Multiple DNA Center Templates to Switch
   hosts: localhost
   gather_facts: no
-  
   vars:
     dnac:
       host: "https://your-dnac-host"
       username: "your-username"
       password: "your-password"
       verify: no
-
-    template:
-      project_name: "Your Project Name"
-      template_name: "Your Template Name"
-      template_params:
-        - parameter1: value1
-        - parameter2: value2
-
-    device:
-      name: "Your Device Name"
+    switch_name: "Your Switch Name"
+  vars_files:
+    - vars/templates_parameters.yml
 
   tasks:
-
   - name: Get Device ID
     cisco.dnacenter.dnac_device_info:
       host: "{{ dnac.host }}"
       username: "{{ dnac.username }}"
       password: "{{ dnac.password }}"
       verify: "{{ dnac.verify }}"
-      name: "{{ device.name }}"
+      name: "{{ switch_name }}"
     register: device_info
 
-  - name: Deploy the DNA-C template to switch
+  - name: Deploy the DNA-C templates to switch
     cisco.dnacenter.dnac_template_deploy:
       host: "{{ dnac.host }}"
       username: "{{ dnac.username }}"
       password: "{{ dnac.password }}"
       verify: "{{ dnac.verify }}"
-      project_name: "{{ template.project_name }}"
-      template_name: "{{ template.template_name }}"
-      template_params: "{{ template.template_params }}"
+      project_name: "{{ item.project_name }}"
+      template_name: "{{ item.template_name }}"
+      template_params: "{{ item.params }}"
       target_info:
         - id: "{{ device_info.devices[0].id }}"
           type: "MANAGED_DEVICE_UUID"
+    with_items: "{{ templates }}"

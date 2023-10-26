@@ -1,0 +1,14 @@
+templates:
+  - project_name: "Project Name 1"
+    template_name: "Template Name 1"
+    params:
+      parameter1: value1
+      parameter2: value2
+
+  - project_name: "Project Name 2"
+    template_name: "Template Name 2"
+    params:
+      parameterA: valueA
+      parameterB: valueB
+
+# Add more templates as needed...
