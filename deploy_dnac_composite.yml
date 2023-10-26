@@ -1,0 +1,37 @@
+---
+- name: Deploy Multiple DNA Center Composite Templates to Switch
+  hosts: localhost
+  gather_facts: no
+  vars:
+    dnac:
+      host: "https://your-dnac-host"
+      username: "your-username"
+      password: "your-password"
+      verify: no
+    switch_name: "Your Switch Name"
+  vars_files:
+    - vars/composite_templates_parameters.yml
+
+  tasks:
+  - name: Get Device ID
+    cisco.dnacenter.dnac_device_info:
+      host: "{{ dnac.host }}"
+      username: "{{ dnac.username }}"
+      password: "{{ dnac.password }}"
+      verify: "{{ dnac.verify }}"
+      name: "{{ switch_name }}"
+    register: device_info
+
+  - name: Deploy the DNA-C composite templates to switch
+    cisco.dnacenter.dnac_template_deploy:
+      host: "{{ dnac.host }}"
+      username: "{{ dnac.username }}"
+      password: "{{ dnac.password }}"
+      verify: "{{ dnac.verify }}"
+      project_name: "{{ item.project_name }}"
+      template_name: "{{ item.composite_template_name }}"
+      template_params: "{{ item.params }}"
+      target_info:
+        - id: "{{ device_info.devices[0].id }}"
+          type: "MANAGED_DEVICE_UUID"
+    with_items: "{{ composite_templates }}"
