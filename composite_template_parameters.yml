@@ -1,0 +1,14 @@
+composite_templates:
+  - project_name: "Project Name 1"
+    composite_template_name: "Composite Template Name 1"
+    params:
+      parameter1: value1
+      parameter2: value2
+
+  - project_name: "Project Name 2"
+    composite_template_name: "Composite Template Name 2"
+    params:
+      parameterA: valueA
+      parameterB: valueB
+
+# Add more composite templates as needed...
