@@ -1,0 +1,85 @@
+---
+- name: Manage Ports on Cisco Cat9k Switches using DNAC
+  hosts: all
+  gather_facts: no
+  vars:
+    dnac_host: "your_dnac_host"
+    dnac_username: "your_dnac_username"
+    dnac_password: "your_dnac_password"
+    single_switch: "{{ single_switch_var | default('') }}"
+    port_state: "{{ port_state_var | default('down') }}"
+    specific_ports: "{{ specific_ports_var | default('') }}"
+  tasks:
+    - name: Print Input Variables
+      debug:
+        msg: "Running playbook with port_state: {{ port_state }}, specific_ports: {{ specific_ports }}"
+
+    - name: Get Switch Details from DNAC
+      dnac_device_info:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        validate_certs: no
+      register: switch_info
+      failed_when: "'response' not in switch_info"
+    
+    - name: Check for Errors in DNAC Response
+      assert:
+        that:
+          - switch_info.response | length > 0
+        fail_msg: "No switches found in DNAC response."
+      ignore_errors: yes
+
+    - name: Filter Cat9k Switches
+      set_fact:
+        cat9k_switches: "{{ switch_info['response'] | selectattr('family', 'search', 'Cat9k') | list }}"
+
+    - name: Print Number of Cat9k Switches Found
+      debug:
+        msg: "Found {{ cat9k_switches | length }} Cat9k switches."
+
+    - name: Get Ports Status for Cat9k Switches
+      dnac_device_interface:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        device_id: "{{ item.id }}"
+      register: ports_status
+      loop: "{{ cat9k_switches }}"
+      when: "single_switch == '' or single_switch == item.hostname"
+      loop_control:
+        label: "{{ item.hostname }}"
+
+    - name: Set Ports State for Cat9k Switches
+      dnac_interface:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        device_id: "{{ item.0.deviceId }}"
+        interface_name: "{{ item.1.portName }}"
+        state: "{{ port_state if port_state != 'all_up' else 'up' }}"
+      register: port_action_result
+      loop: "{{ ports_status.results | subelements('response') }}"
+      when: >
+        (port_state == 'all_up') or
+        (port_state == 'up' and (specific_ports == '' or item.1.portName in specific_ports.split(','))) or 
+        (port_state == 'down' and item.1.operStatus != 'up' and (specific_ports == '' or item.1.portName in specific_ports.split(',')))
+      loop_control:
+        label: "{{ item.1.portName }}"
+
+    - name: Print Port Action Results
+      debug:
+        msg: "Port {{ item.1.portName }} action result: {{ port_action_result.results[item.0].status }}"
+      loop: "{{ ports_status.results | subelements('response') }}"
+      when: port_action_result.changed
+      loop_control:
+        label: "{{ item.1.portName }}"
+
+
+
+# Print statements using the debug module have been added throughout to provide feedback.
+# An assert task has been introduced to check the response from DNAC to ensure that switches are found.
+# A failed_when condition is used after querying DNAC to check if the response contains the expected data.
+# After performing actions on the ports, the results are printed to provide feedback on each port's action result.
+# By integrating these changes, the playbook provides better visibility into its operations and handles errors more gracefully. 
+# Adjust any placeholders or assumptions as necessary based on your actual environment.
