@@ -1,0 +1,47 @@
+---
+- name: Disable Unconnected Ports on Cisco Cat9k Switches using DNAC
+  hosts: all
+  gather_facts: no
+  vars:
+    # Your DNAC API credentials
+    dnac_host: "your_dnac_host"
+    dnac_username: "your_dnac_username"
+    dnac_password: "your_dnac_password"
+    single_switch: "{{ single_switch_var | default('') }}"
+  tasks:
+    - name: Get Switch Details from DNAC
+      dnac_device_info:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        validate_certs: no
+      register: switch_info
+
+    - name: Filter Cat9k Switches
+      set_fact:
+        cat9k_switches: "{{ switch_info['response'] | selectattr('family', 'search', 'Cat9k') | list }}"
+    
+    - name: Get Ports Status for Cat9k Switches
+      dnac_device_interface:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        device_id: "{{ item.id }}"
+      register: ports_status
+      loop: "{{ cat9k_switches }}"
+      when: "single_switch == '' or single_switch == item.hostname"
+      loop_control:
+        label: "{{ item.hostname }}"
+
+    - name: Disable Unconnected Ports for Cat9k Switches
+      dnac_interface:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        device_id: "{{ item.0.deviceId }}"
+        interface_name: "{{ item.1.portName }}"
+        state: down
+      loop: "{{ ports_status.results | subelements('response') }}"
+      when: "item.1.operStatus != 'up'"
+      loop_control:
+        label: "{{ item.1.portName }}"
