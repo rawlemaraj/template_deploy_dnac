@@ -1,0 +1,63 @@
+---
+- name: Manage Ports on Cisco Cat9k Switches using DNAC
+  hosts: all
+  gather_facts: no
+  vars:
+    dnac_host: "your_dnac_host"
+    dnac_username: "your_dnac_username"
+    dnac_password: "your_dnac_password"
+    single_switch: "{{ single_switch_var | default('') }}"
+    port_state: "{{ port_state_var | default('down') }}"
+    specific_ports: "{{ specific_ports_var | default('') }}"
+    
+  tasks:
+    - name: Print Input Variables
+      debug:
+        msg: "Running playbook with port_state: {{ port_state }}, specific_ports: {{ specific_ports }}"
+
+    - name: Get Switch Details from DNAC using cisco.dnac.network_device_info
+      cisco.dnac.network_device_info:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        validate_certs: no
+      register: switch_info
+      failed_when: "'response' not in switch_info"
+    
+    - name: Check for Errors in DNAC Response
+      assert:
+        that:
+          - switch_info.response | length > 0
+        fail_msg: "No switches found in DNAC response."
+      ignore_errors: yes
+
+    - name: Filter Cat9k Switches
+      set_fact:
+        cat9k_switches: "{{ switch_info['response'] | selectattr('family', 'search', 'Cat9k') | list }}"
+
+    - name: Print Number of Cat9k Switches Found
+      debug:
+        msg: "Found {{ cat9k_switches | length }} Cat9k switches."
+
+    # Continue with fetching port status and other details as needed
+
+    - name: Generate CLI Commands from Template for Ports
+      template:
+        src: interface_config.j2
+        dest: /tmp/interface_config.cfg
+      vars:
+        ports: "{{ ports_status.results | subelements('response') }}"
+        port_state: "{{ port_state }}"
+        specific_ports: "{{ specific_ports.split(',') if specific_ports else [] }}"
+      delegate_to: localhost
+
+    - name: Deploy CLI Commands to Switches using DNAC
+      # Assuming a fictitious 'dnac_deploy_cli' Ansible module for the example
+      dnac_deploy_cli:
+        host: "{{ dnac_host }}"
+        username: "{{ dnac_username }}"
+        password: "{{ dnac_password }}"
+        device_id: "{{ item.id }}"
+        config_file: /tmp/interface_config.cfg
+      loop: "{{ cat9k_switches }}"
+      when: "single_switch == '' or single_switch == item.hostname"

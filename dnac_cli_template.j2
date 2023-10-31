@@ -1,0 +1,16 @@
+{% for port in ports %}
+{% if port_state == "all_up" %}
+interface {{ port.name }}
+no shutdown
+{% elif port_state == "down" and port.operStatus != "up" %}
+interface {{ port.name }}
+shutdown
+{% elif specific_ports and port.name in specific_ports %}
+interface {{ port.name }}
+{% if port_state == "up" %}
+no shutdown
+{% elif port_state == "down" %}
+shutdown
+{% endif %}
+{% endif %}
+{% endfor %}
