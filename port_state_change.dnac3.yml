@@ -1,0 +1,63 @@
+---
+- name: Manage Cisco Switch Interfaces based on DNAC Data
+  hosts: localhost
+  gather_facts: no
+  vars:
+    dnac_host: "your_dnac_host"
+    dnac_username: "your_dnac_username"
+    dnac_password: "your_dnac_password"
+    dnac_verify: true
+    dnac_port: 443
+    dnac_version: "2.3.5.3"
+    dnac_debug: false
+    allowed_series: ["Cisco Catalyst 9300", "Cisco Catalyst 9400", "Cisco Catalyst 9500"]
+  tasks:
+    - name: Get Device Details from Cisco DNA Center
+      cisco.dnac.device_details_info:
+        dnac_host: "{{ dnac_host }}"
+        dnac_username: "{{ dnac_username }}"
+        dnac_password: "{{ dnac_password }}"
+        dnac_verify: "{{ dnac_verify }}"
+        dnac_port: "{{ dnac_port }}"
+        dnac_version: "{{ dnac_version }}"
+        dnac_debug: "{{ dnac_debug }}"
+        searchBy: "{{ single_switch | default(omit) }}"
+        identifier: "name"
+      register: device_details
+
+    - name: Filter for specific series of devices and get their interfaces
+      block:
+        - name: Create list of target device IDs
+          set_fact:
+            target_devices: "{{ device_details.dnac_response | json_query(query) }}"
+          vars:
+            query: "[?contains(['Cisco Catalyst 9300', 'Cisco Catalyst 9400', 'Cisco Catalyst 9500'], series)].{id: id, hostname: hostname}"
+        
+        - name: Debug - Show target device hostnames
+          debug:
+            msg: "Target device hostnames: {{ target_devices | map(attribute='hostname') | list }}"
+
+        - name: Get interface details for each device
+          cisco.dnac.device_interface_info:
+            dnac_host: "{{ dnac_host }}"
+            dnac_username: "{{ dnac_username }}"
+            dnac_password: "{{ dnac_password }}"
+            dnac_verify: "{{ dnac_verify }}"
+            dnac_port: "{{ dnac_port }}"
+            dnac_version: "{{ dnac_version }}"
+            dnac_debug: "{{ dnac_debug }}"
+            id: "{{ item.id }}"
+          loop: "{{ target_devices }}"
+          register: interface_details_list
+
+        - name: Create list of interfaces by switch hostname with status
+          set_fact:
+            interfaces_by_host: "{{ interfaces_by_host | default({}) | combine({item.0.hostname: interface_list}) }}"
+          vars:
+            interface_list: "{{ item.1.dnac_response | selectattr('status', 'defined') | map(attribute='portName') | list }}"
+          loop: "{{ target_devices | zip(interface_details_list.results) }}"
+
+    - name: Debug - Show interfaces by host with their status
+      debug:
+        msg: "{{ item.key }} interfaces and their status: {{ item.value }}"
+      loop: "{{ interfaces_by_host | dict2items }}"
