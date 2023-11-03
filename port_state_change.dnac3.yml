@@ -1,18 +1,25 @@
 ---
-- name: Manage Cisco Switch Interfaces based on DNAC Data
-  hosts: localhost
+- name: Manage interfaces on Cisco DNAC managed devices
+  hosts: all
   gather_facts: no
   vars:
-    dnac_host: "your_dnac_host"
-    dnac_username: "your_dnac_username"
-    dnac_password: "your_dnac_password"
-    dnac_verify: true
-    dnac_port: 443
-    dnac_version: "2.3.5.3"
-    dnac_debug: false
-    allowed_series: ["Cisco Catalyst 9300", "Cisco Catalyst 9400", "Cisco Catalyst 9500"]
+    dnac_host: "your_dnac_host"  # Replace with your Cisco DNAC host
+    dnac_username: "your_dnac_username"  # Replace with your Cisco DNAC username
+    dnac_password: "your_dnac_password"  # Replace with your Cisco DNAC password
+    dnac_verify: true  # Set to false if you want to ignore SSL certificate verification
+    dnac_port: 443  # Default port for Cisco DNAC
+    dnac_version: "2.3.5.3"  # Cisco DNAC version
+    single_switch: "{{ single_switch_var | default('') }}"
+    port_state: "{{ port_state_var | default('down') }}"
+    specific_ports: "{{ specific_ports_var | default('') }}"
+    cat9k_series:
+      - "Cisco Catalyst 9300"
+      - "Cisco Catalyst 9400"
+      - "Cisco Catalyst 9500"
+
   tasks:
-    - name: Get Device Details from Cisco DNA Center
+    # Task to obtain device details from DNAC
+    - name: Get all device details from DNAC
       cisco.dnac.device_details_info:
         dnac_host: "{{ dnac_host }}"
         dnac_username: "{{ dnac_username }}"
@@ -20,44 +27,29 @@
         dnac_verify: "{{ dnac_verify }}"
         dnac_port: "{{ dnac_port }}"
         dnac_version: "{{ dnac_version }}"
-        dnac_debug: "{{ dnac_debug }}"
-        searchBy: "{{ single_switch | default(omit) }}"
-        identifier: "name"
-      register: device_details
+        dnac_debug: false  # Set to true to enable debug mode
+      register: all_devices
+      ignore_errors: yes
 
-    - name: Filter for specific series of devices and get their interfaces
-      block:
-        - name: Create list of target device IDs
-          set_fact:
-            target_devices: "{{ device_details.dnac_response | json_query(query) }}"
-          vars:
-            query: "[?contains(['Cisco Catalyst 9300', 'Cisco Catalyst 9400', 'Cisco Catalyst 9500'], series)].{id: id, hostname: hostname}"
-        
-        - name: Debug - Show target device hostnames
-          debug:
-            msg: "Target device hostnames: {{ target_devices | map(attribute='hostname') | list }}"
+    # Handling errors during device information retrieval
+    - name: Check for errors in getting device details
+      fail:
+        msg: "Failed to get device details from DNAC"
+      when: all_devices is failed
 
-        - name: Get interface details for each device
-          cisco.dnac.device_interface_info:
-            dnac_host: "{{ dnac_host }}"
-            dnac_username: "{{ dnac_username }}"
-            dnac_password: "{{ dnac_password }}"
-            dnac_verify: "{{ dnac_verify }}"
-            dnac_port: "{{ dnac_port }}"
-            dnac_version: "{{ dnac_version }}"
-            dnac_debug: "{{ dnac_debug }}"
-            id: "{{ item.id }}"
-          loop: "{{ target_devices }}"
-          register: interface_details_list
+    # Filtering devices that belong to the specified Catalyst series
+    - name: Filter devices based on the Catalyst 9k series
+      set_fact:
+        cat9k_devices: "{{ all_devices.dnac_response | selectattr('series', 'in', cat9k_series) | list }}"
+      when: all_devices is succeeded
 
-        - name: Create list of interfaces by switch hostname with status
-          set_fact:
-            interfaces_by_host: "{{ interfaces_by_host | default({}) | combine({item.0.hostname: interface_list}) }}"
-          vars:
-            interface_list: "{{ item.1.dnac_response | selectattr('status', 'defined') | map(attribute='portName') | list }}"
-          loop: "{{ target_devices | zip(interface_details_list.results) }}"
-
-    - name: Debug - Show interfaces by host with their status
+    # Print the list of filtered devices
+    - name: Print the list of Catalyst 9k series devices
       debug:
-        msg: "{{ item.key }} interfaces and their status: {{ item.value }}"
-      loop: "{{ interfaces_by_host | dict2items }}"
+        msg: "The following are the Catalyst 9k series devices: {{ cat9k_devices | map(attribute='hostname') | list }}"
+      when: cat9k_devices is defined
+
+    # Proceed with interface management tasks...
+    # ... [Additional tasks to manage ports for each device based on `deviceId`]
+
+  # Additional playbook content can go here
