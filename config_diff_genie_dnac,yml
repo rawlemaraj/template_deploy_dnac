@@ -1,0 +1,74 @@
+---
+- name: Cisco DNAC Playbook to Fetch Device and Interface Details
+  hosts: localhost
+  gather_facts: no
+  vars:
+    dnac_host: "your_dnac_host"
+    dnac_username: "your_dnac_username"
+    dnac_password: "your_dnac_password"
+    dnac_verify: true
+    dnac_port: 443
+    dnac_version: "2.3.5.3"
+    dnac_debug: false
+    filtered_hostnames: ["hostname1", "hostname2"] # Replace with your device hostnames
+
+  tasks:
+    - name: Get all Device Details
+      cisco.dnac.device_details_info:
+        dnac_host: "{{ dnac_host }}"
+        dnac_username: "{{ dnac_username }}"
+        dnac_password: "{{ dnac_password }}"
+        dnac_verify: "{{ dnac_verify }}"
+        dnac_port: "{{ dnac_port }}"
+        dnac_version: "{{ dnac_version }}"
+        dnac_debug: "{{ dnac_debug }}"
+      register: device_details
+
+    - name: Filter Devices by Hostname
+      set_fact:
+        filtered_devices: "{{ device_details.dnac_response | selectattr('nwDeviceName', 'in', filtered_hostnames) | map(attribute='nwDeviceId') | list }}"
+
+- name: Configurations comparison with Genie
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    - name: Fetch initial configurations
+      ios_command:
+        commands:
+          - show running-config
+      register: initial_config
+      when: inventory_hostname in filtered_devices
+
+    - name: Save initial configurations
+      copy:
+        content: "{{ initial_config.stdout[0] }}"
+        dest: "./configs/initial_config_{{ inventory_hostname }}.txt"
+      when: initial_config is defined
+
+    - name: Waiting for 5 minutes
+      pause:
+        minutes: 5
+
+    - name: Fetch configurations after 5 minutes
+      ios_command:
+        commands:
+          - show running-config
+      register: later_config
+      when: inventory_hostname in filtered_devices
+
+    - name: Save configurations after 5 minutes
+      copy:
+        content: "{{ later_config.stdout[0] }}"
+        dest: "./configs/later_config_{{ inventory_hostname }}.txt"
+      when: later_config is defined
+
+    - name: Compare configurations
+      command: genie diff ./configs/initial_config_{{ inventory_hostname }}.txt ./configs/later_config_{{ inventory_hostname }}.txt
+      register: config_diff
+      when: later_config is defined and initial_config is defined
+
+    - name: Show configuration differences
+      debug:
+        msg: "{{ config_diff.stdout }}"
+      when: config_diff is defined
