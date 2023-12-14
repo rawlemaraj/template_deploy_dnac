@@ -1,0 +1,66 @@
+---
+- name: Network Configuration Management
+  hosts: dnac
+  gather_facts: no
+  tasks:
+    - name: Get list of switches from DNAC
+      # Add your DNAC module task here to collect the list of switches
+      register: switch_list
+
+- name: Collect Initial Configurations from Switches
+  hosts: "{{ switch_list.devices }}"
+  gather_facts: no
+  roles:
+    - ansible-pyats
+  tasks:
+    - name: Get current switch config
+      pyats_parse_command:
+        command: 'show running-config'
+      register: initial_config
+      ignore_errors: yes
+
+    - name: Write hostname to file if failed
+      local_action: 
+        module: lineinfile
+        path: /path/to/failed_switches.txt
+        line: "{{ inventory_hostname }}"
+      when: initial_config.failed
+
+    - name: Store initial config
+      local_action:
+        module: copy
+        content: "{{ initial_config.structured }}"
+        dest: "/path/to/configs/{{ inventory_hostname }}_initial.json"
+      when: not initial_config.failed
+
+- name: Deploy Configuration Template Using DNAC
+  hosts: dnac
+  gather_facts: no
+  tasks:
+    - name: Deploy template to switches
+      # Add your DNAC module task here for deploying the template
+
+- name: Collect Post-Deployment Configurations and Compare
+  hosts: "{{ switch_list.devices }}"
+  gather_facts: no
+  roles:
+    - ansible-pyats
+  tasks:
+    - name: Get post-deployment switch config
+      pyats_parse_command:
+        command: 'show running-config'
+      register: post_deployment_config
+
+    - name: Store post-deployment config
+      local_action:
+        module: copy
+        content: "{{ post_deployment_config.structured }}"
+        dest: "/path/to/configs/{{ inventory_hostname }}_post.json"
+
+    - name: Compare Configurations
+      set_fact:
+        config_diff: "{{ lookup('file', '/path/to/configs/{{ inventory_hostname }}_initial.json') | pyats_diff(lookup('file', '/path/to/configs/{{ inventory_hostname }}_post.json')) }}"
+    
+    - name: Display Configuration Differences
+      debug:
+        var: config_diff
